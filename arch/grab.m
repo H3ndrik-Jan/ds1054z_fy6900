@@ -1,9 +1,10 @@
+
 % Create VISA object
 %DS1104Z = visa('ni','USB0::0x1AB1::0x04CE::DS1ZA220801421::INSTR');
 DS1104Z = visa('ni', 'TCPIP::192.168.178.129::INSTR');
 % Set the device property. In this demo, the length of the input buffer is set to 2048.
-len = 65536;
-fs = 65535;
+len = 12000;
+fs = 1e9;
 
  DS1104Z.InputBufferSize = len;
 % % Open the VISA object created
@@ -22,7 +23,7 @@ fs = 65535;
 % %and the last byte is the terminator (0x0A). Therefore, the effective waveform points read is from the
 % %12nd to the next to last.
  wave = data(12:len-1);
- wave = wave';
+ %wave = wave';
  subplot(211);
  plot(wave);
  title('Input Signal in time domain');
@@ -32,4 +33,7 @@ fs = 65535;
 
  subplot(212);
  plot(f, xf(1:NFFT/2+1));
+ xlim([0 100e6]);
+ ylabel('Amplitude ()');
+ xlabel('Frequency (Hz)');
  title('Spectrum of the signal');

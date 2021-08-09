@@ -33,17 +33,17 @@ fs = Fs;
  xf = abs(fft(wave, NFFT));
 
  subplot(212);
- output = xf(1:NFFT/2+1);
- plot(f, output );
+ output = 
+ plot(f, xf(1:NFFT/2+1));
  xlim([10000 10e6]);
  ylabel('Amplitude ()');
  xlabel('Frequency (Hz)');
  title('Spectrum of the signal');
  
  disp('Peak: ');
- bode = interp1(f, output, 3000000);
- disp(bode);
-
+ disp(interp1(fs, xf, 3000000));
+ %disp(abs(xf(((3000000/Fs)*len))));%(((300000/fs)*len)));
+ 
  delete(FY6900);
  
  function setFrequency(obj, freq)
