@@ -9,12 +9,18 @@ delete(FY6900);
 comPort = 'COM7';
 
 FY6900 = serialport(comPort, 115200);
-setFrequency(FY6900, 3000000000000);
+
+
+%setFrequency(FY6900, 3000000000000);
 
 h = DS1054Z('192.168.178.129');
 %h.T_SCALE = 5e-8;
 h.Run
-
+loopindex = 0;
+for freq = 1000000000000:+1000000000000:10000000000000
+    setFrequency(FY6900, freq);
+    loopindex = loopindex+1;
+    pause(1);
 len = 12000;
 [wave, Fs, ts] = h.WaveAcquire(1, len);
 
@@ -41,9 +47,10 @@ fs = Fs;
  title('Spectrum of the signal');
  
  disp('Peak: ');
- bode = interp1(f, output, 3000000);
- disp(bode);
-
+ bode(loopindex) = interp1(f, output, freq/1000000);
+ disp(bode(loopindex));
+end
+plot(bode);
  delete(FY6900);
  
  function setFrequency(obj, freq)
