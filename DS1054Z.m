@@ -1295,7 +1295,7 @@ classdef DS1054Z < handle
         % Functions
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
         
-        % ScreenShot
+       % ScreenShot
         %   ColorInvert: logical, Invert RGB Colors (default: true)
         %
         %   Returns a 480x800x3 CData array 
@@ -1310,7 +1310,6 @@ classdef DS1054Z < handle
             txHeader = 11;
             bitHeader = 54;
             pxBytes = 480*800*3;
-            
             resp = query(obj.com,':DISP:DATA?',  txHeader + bitHeader + pxBytes );
             
             % Hard coded pixel indexing for DS1054Z
@@ -1406,7 +1405,13 @@ classdef DS1054Z < handle
             
                 error('Some Channels are not active');
             end
-
+            
+            buzzerSetting = query(obj.com, ':SYST:BEEP?');
+            disp(buzzerSetting);
+             %disable the buzzer
+             if buzzerSetting == 1
+                fprintf(obj.com,':SYST:BEEP OFF');
+             end
             % If the scope is in a non idle mode resume after memory
             % transfer
             resp = query(obj.com,':TRIG:STAT?');
@@ -1461,7 +1466,7 @@ classdef DS1054Z < handle
             if ScreenMemory
                 fprintf(obj.com,':WAVeform:MODE NORM');
             else
-                fprintf(obj.com,':WAVeform:MODE RAW');
+                fprintf(obj.com,':WAV:MODE RAW');
             end
             
             % Wave preamble provides the time scale and veritcal scale of
@@ -1542,7 +1547,233 @@ classdef DS1054Z < handle
                     % set start and stop indices for current memory block
                     fprintf(obj.com,sprintf(':WAV:STAR %d', startidx));
                     fprintf(obj.com,sprintf(':WAV:STOP %d', stopidx));
+                    disp('Set Start and stop');
+                    % Query for memory block
+                    bufSize = min(stopidx-startidx+1, memSamples) + 12;
+                    fprintf(obj.com,':WAV:DATA?');
+                    buf = fread(obj.com,bufSize);
+%                     buf = query(obj.com,':WAV:DATA?');
+                    len = stopidx - startidx + 1;
                     
+                    TMC_HDR = buf(1:11);
+                    TMC_dlen = str2double(char(TMC_HDR(3:end).'));
+                    
+                    if TMC_dlen ~= len
+                        disp( 'Scope did not return correct data length')
+                    end
+
+                    if length(buf) < ( len + 11 )
+                        disp('Insufficent data samples returned, perhaps bad preamble?')
+                        disp(wvs)
+                        disp('Preamble return string:')
+                        disp(wvs_resp)
+                        error('Did not return data')
+                    end
+                    
+                    % Assign wave data index past TMC header
+                    wave(startidx:stopidx, j) = buf(12:(12+len-1));
+                    
+                    if mod(i,10) == 1
+                        fprintf('\n')
+                    end
+%                     
+%                     % print percent complete
+                    fprintf( '%3d%% ', round( stopidx/memSamples *100) );
+
+                    if( stopidx >= memSamples )
+                        break;
+                    end
+                end
+ 
+            end
+
+            fprintf('\n')
+            
+             if buzzerSetting == 1
+                fprintf(obj.com,':SYST:BEEP ON');
+             end
+             
+            if ReRun            
+                fprintf(obj.com,':RUN');
+            end
+            
+            
+            if nargout >= 1
+                % Convert binary ADC output to floating point measurement
+                for j = 1:length(CHNIdx)
+                    wave(:,j) = (wave(:,j) - wPre(j).yreference - wPre(j).yorigin) .* wPre(j).yincrement;
+                end
+            else
+                wave=[];
+                disp('No assignment made... saved lots of data points from scrolling')
+            end
+            
+            if nargout == 3
+                % When Trigger offset is set to 0 s, sample memory spans -6
+                % graticules to +6 graticules.
+                t0 = -6*obj.T_SCALE + obj.T_OFFSET;
+                ts = t0:1/Fs:(t0 +(memSamples-1)/Fs);
+                ts = ts';
+            end
+
+        end
+        
+        function [wave,Fs,ts] = InternalWaveAcquire(obj, CHNIdx, ScreenMemory )
+            % default to acquiring all active channels
+            if nargin < 2
+                CHNIdx = obj.ActiveChannels();
+            end
+         
+            % default to acquiring the acquistion memory
+            if nargin < 3
+                ScreenMemory = 0;
+            end
+          
+            actChannels = obj.ActiveChannels;
+            
+            if any( ~ismember(CHNIdx,actChannels) ) || ...
+                    length(CHNIdx) > sum(actChannels)
+            
+                error('Some Channels are not active');
+            end
+
+            % If the scope is in a non idle mode resume after memory
+            % transfer
+            resp = query(obj.com,':TRIG:STAT?');
+            switch deblank(resp)
+                case { 'TD', 'AUTO', 'WAIT' }
+                    ReRun = 1;
+                    fprintf(obj.com,':STOP');
+                    
+                % When the DS1054Z is in 'RUN' mode it does not execute the
+                % stop command. Typical case of 'RUN' mode is filling the
+                % pre-trigger buffer. Wait until the scope transistions 
+                % into another mode where it accepts the stop command.
+                case 'RUN'
+                    while any( strcmpi(deblank(resp), 'RUN' ) )
+                        resp = query(obj.com,':TRIG:STAT?');
+                        pause(0.01)
+                    end
+                    
+                    fprintf(obj.com,':STOP');
+                    
+                    if strcmpi( obj.TRIG_SWEEP, 'SING' )
+                        ReRun = 0;
+                    else
+                        ReRun = 1;
+                    end
+
+                case 'STOP'
+                    ReRun = 0;
+            end
+
+            % DS1054Z must be in idle/stop mode to transfer acquistion
+            % memory over SCPI/LXI interface
+            
+            i = 0;
+            resp = [];
+            while ~strcmpi(deblank(resp), {'STOP'} )
+                resp = query(obj.com,':TRIG:STAT?');
+%                 pause(0.01)
+                i = i + 1;
+                
+                if i > 30 * 100
+                    error('Scope did not end acquisition cycle');
+                end
+            end
+                
+            fprintf(obj.com, ':WAV:SOUR CHAN%d', CHNIdx(1));
+            fprintf(obj.com, ':WAV:STAR %d', 1);
+            fprintf(obj.com, ':WAV:STOP %d', 2);
+%             pause(0.1);
+
+            % Set the output memory interface 
+            if ScreenMemory
+                fprintf(obj.com,':WAVeform:MODE NORM');
+            else
+                fprintf(obj.com,':WAV:MODE RAW');
+            end
+          %  fprintf(obj.com,':WAV:MODE RAW');
+          %  disp(query(obj.com,':WAV:MODE?'));
+            % Wave preamble provides the time scale and vertical scale of
+            % ONE channel. However time base is common between channels
+            %
+            % Hold onto wave preamble response for debuging
+            wvs_resp = query(obj.com,':WAV:PRE?');
+            wvs = obj.WavStruct(regexp(deblank(wvs_resp), ',', 'split'));
+
+            % Acquistion memory depth is not directly known when in auto
+            % mode ... Must infer from sample rate and time scale
+            % 12 horizontal divisons
+            T_LENGTH = 12*obj.T_SCALE;
+
+            % Parse acquision sample rate
+            if ScreenMemory
+                % when sampling from screen memory use wave preamble
+                Fs = 1/(wvs.xincrement);
+                
+                [n,~,s] = engunits(Fs);
+                disp( [ 'Screen Equivelenet Time Sample Rate: ' num2str(n) ' ' s 'Sa/s'] );
+                
+                memSamples = min( floor( T_LENGTH * 1/(wvs.xincrement)), 1200 ); 
+            else
+                Fs = round(obj.SRATE);
+                if isnan(obj.MDEPTH)
+                    memSamples = min( floor( T_LENGTH * Fs ), 24e6 );
+                else
+                    memSamples = obj.MDEPTH;
+                end
+            end
+ 
+            % The DS1054Z does not always return a correct preamble
+            % sometimes the xincrement field is orders of magnitude in
+            % error
+            if Fs ~= round( 1/(wvs.xincrement) )
+                [n,~,s] = engunits(1/(wvs.xincrement));
+                disp( [ 'Preamble Sample Rate: ' num2str(n) ' ' s 'Sa/s'] );
+                
+                [n,~,s] = engunits(obj.SRATE);
+                disp( [ 'ACQ Sample Rate: '  num2str(n) ' ' s 'Sa/s'] );
+                
+                disp('buggy scope..., perhaps bad preamble?')
+                disp(wvs)
+                disp('Preamble return string:')
+                disp(wvs_resp)
+            end
+            
+
+            
+            % Pre-allocate wave sample memory
+            wave = zeros(memSamples,length(CHNIdx));
+            
+            % Pre-allocate wave preamble struct array
+            wPre = repmat(wvs,1,length(CHNIdx));
+
+            for j = 1:length(CHNIdx)
+                CHN = CHNIdx(j);
+                
+                % select channel (CHN) for transfer
+                fprintf(obj.com,sprintf(':WAV:SOUR CHAN%d', CHN));
+                
+                % request channel wave preamble
+                resp = query(obj.com,':WAV:PRE?');
+                wPre(j) = obj.WavStruct(regexp(deblank(resp), ',', 'split'));
+ 
+                % DS1054Z Does not like to read more than somewhere between 
+                % 1 MSample to 200 kSamples at a time
+                % Iterate reading up to 200 kSample memory blocks
+                blkSize = 200e3; %round( 500E3 / obj.NumActiveChannels() );
+                
+%                 fprintf( '\nTransfering Channel %d\n', CHN );
+                
+                for i = 1:ceil(24E6/blkSize)
+                    startidx = 1 + (i-1)*blkSize;
+                    stopidx = min( i*blkSize, memSamples );
+
+                    % set start and stop indices for current memory block
+                    fprintf(obj.com,sprintf(':WAV:STAR %d', startidx));
+                    fprintf(obj.com,sprintf(':WAV:STOP %d', stopidx));
+                    disp('Set Start and stop');
                     % Query for memory block
                     bufSize = min(stopidx-startidx+1, memSamples) + 12;
                     fprintf(obj.com,':WAV:DATA?');
@@ -1608,6 +1839,7 @@ classdef DS1054Z < handle
             end
 
         end
+        
         
         % Set trigger delay to 1st graticule on left hand side
         function [] = LeftTrigger(obj)
