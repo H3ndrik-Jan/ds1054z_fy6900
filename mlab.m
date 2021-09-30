@@ -1,86 +1,134 @@
+STARTFREQ = 1e5;
+STOPFREQ = 50e5;
+FREQSTEP = 5e5;
 
-delete(FY6900);
+clear FY6900;
+close all;
 comPort = 'COM10';
-%delete(FY6900);
+
 FY6900 = serialport(comPort, 115200);
+setOutputState(FY6900, 1, true);
 setOutputState(FY6900, 2, true);
-%ScreenShot(h);
 
 h = DS1054Z('192.168.178.129');
 len = 120000;
-h.MDEPTH = 600000;%'AUTO';
-%h.Stop
+h.MDEPTH = 600000;
+h.MDEPTH = 600000;
+h.Stop
 h.T_SCALE = 1e-6;
 h.Run
-%h.ScreenShot
-%imshow(h.ScreenShot(1));
+h.ScreenShot
 loopindex = 0;
 
+freq = STARTFREQ;
 
-for freq = 1e6:+2e6:5e6
-    setFrequency(FY6900, freq);
+while freq <= STOPFREQ
+    
+    setFrequency(FY6900, freq, 1);
+    setFrequency(FY6900, freq, 2);
+    
     loopindex = loopindex+1;
     
-[wave, Fs, ts] = h.WaveAcquire([1 2], false);
-fs = Fs;
+    [wave, Fs, ts] = h.WaveAcquire([1 2], false);
+    fs = Fs;
 
- subplot(411);
- plot(wave);
- ylabel('Amplitude (V)');
- xlabel(['Time in ' num2str(h.T_SCALE) ' S']);
+    inputWave = wave(:,1);
+    outputWave = wave(:,2);
 
+    capturedFreqs(loopindex) = freq;
 
- title('Input Signal in time domain');
- 
- NFFT = length(wave);
- xdft = fft(wave);
- xdft = xdft(1:NFFT/2+1);
- psdx = (1/(Fs*NFFT)) * abs(xdft).^2;
- psdx(2:end-1) = 2*psdx(2:end-1);
- freqs = 0:Fs/NFFT:Fs/2;
-%  NFFT = 2^nextpow2(len);
-%  f=fs/2*linspace(0,1,NFFT/2+1);
-%  xf = abs(fft(wave, NFFT));
-%  output = xf(1:NFFT/2+1);
- 
- subplot(412);
- plot(freqs,10*log10(psdx))
-% plot(f, output );
- xlim([10000 10e6]);
- ylabel('Amplitude ()');
- xlabel('Frequency (Hz)');
- title('Spectrum of the signal');
- 
- bode(loopindex) = interp1(freqs, psdx, freq);
- distortion(loopindex) = thd(wave(:,2));
- 
- disp('Peak: ');
+    [inbode(loopindex) inphi(loopindex) indistortion(loopindex) infft] = plotWaveData(h,inputWave, Fs, freq, "inputwave", false);
+    [outbode(loopindex),outphi(loopindex),outdistortion(loopindex),outfft, frequencies] = plotWaveData(h,outputWave, Fs, freq, "outputwave", false);
 
- disp(bode(loopindex));
- disp('THD: ');
- disp(distortion(loopindex));
-% clear wave;
+    Hfreq = outfft./infft;
+    Hmag(loopindex) = interp1(frequencies, Hfreq, freq);
+    Hrad(loopindex) = interp1(frequencies, angle(Hfreq), freq);
+    
+    fprintf('Input\n');
+    disp('Peak: ');
+    disp(inbode(loopindex));
+    disp('THD: ');
+    disp(indistortion(loopindex));
+    disp('Phase: ');
+    disp(inphi(loopindex));
+    disp('Transfer: ');
+    disp(Hmag(loopindex));
+    disp('Angle: ');
+    disp(Hrad(loopindex));
+    fprintf('\n\nOutput\n');
+    disp('Peak: ');
+    disp(outbode(loopindex));
+    disp('THD: ');
+    disp(outdistortion(loopindex));
+    disp('Phase: ');
+    disp(outphi(loopindex));
+
+    doPlot = false;
+    if(doPlot)
+        figure('name', 'Frequency transfer');
+        plot(frequencies,abs(10*log10(Hfreq)));
+
+        title('Frequency transfer');
+         xlim([10000 10e6]);
+        ylabel('Amplitude ()');
+         xlabel('Frequency (Hz)');
+    end
+    
+ freq = freq+FREQSTEP;
+ 
+ clear wave;
+ clear inputWave;
+ clear outputWave;
  clear Fs;
  clear output;
 end
 
+setOutputState(FY6900, 1, false);
 setOutputState(FY6900, 2, false);
-subplot(413);
-plot(bode);
-title('Bode diagram');
-xlabel('Frequency (MHz)');
-ylabel('Amplitude');
+figure('name','Results');
 
-subplot(414);
-plot(distortion);
+subplot(513);
+plot(capturedFreqs,angle(Hmag));
+title('Phase angle');
+xlabel('Frequency (Hz)');
+ylabel('Phase (Rad)');
+
+subplot(514);
+plot(capturedFreqs,rad2deg(Hrad));
+title('Phase angle');
+xlabel('Frequency (Hz)');
+ylabel('Phase (Degree)');
+
+subplot(515);
+plot(capturedFreqs, outdistortion);
 title('Total harmonic distortion (THD)');
-xlabel('Frequency (MHz)');
+xlabel('Frequency (Hz)');
 ylabel('THD (dBc)');
+
+subplot(511);
+plot(capturedFreqs,abs(Hmag));
+title('Magnitude transfer');
+xlabel('Frequency (Hz)');
+ylabel('H');
+
+subplot(512);
+plot(capturedFreqs,mag2db(abs(Hmag)));
+title('Magnitude transfer');
+xlabel('Frequency (Hz)');
+ylabel('dB');
 
 delete(FY6900);
 
-function [Mag, Phase, THD] = plotWaveData(waveData, subplotN)
-    subplot(subplotN);
+function [Mag, Phase, THD, xdft, freqs] = plotWaveData(obj,waveData, Fs, freq, label, doPlot)
+
+    if(doPlot)
+        figure('name',label);
+        subplot(311);
+        plot(waveData);
+        ylabel('Amplitude (V)');
+        xlabel(['Time in ' num2str(obj.T_SCALE) ' S']);
+        title('Input Signal in time domain');
+    end
     
     NFFT = length(waveData);
     xdft = fft(waveData);
@@ -89,10 +137,26 @@ function [Mag, Phase, THD] = plotWaveData(waveData, subplotN)
     psdx(2:end-1) = 2*psdx(2:end-1);
     freqs = 0:Fs/NFFT:Fs/2;
     
-    plot(freqs,10*log10(psdx));
+    if(doPlot)
+        subplot(312);
+        plot(freqs,10*log10(psdx));
+
+        xlim([10000 10e6]);
+        ylabel('Amplitude ()');
+        xlabel('Frequency (Hz)');
+        title('Spectrum of the signal');
+    end
+    
     Mag = interp1(freqs, psdx, freq);
     THD = thd(waveData);
+    Phi = angle(xdft);
     
+    Phase = interp1(freqs, Phi, freq);
+    if(doPlot)
+        subplot(313);
+        plot(Phi);
+        title('Phase angle');
+    end
 end
 
 function setOutputState(obj, channel, state)
@@ -118,9 +182,16 @@ function setOutputState(obj, channel, state)
     end
 end
 
- function setFrequency(obj, freq)
+ function setFrequency(obj, freq, channel)
     str = num2str(freq*1e6);
-    query = sprintf('WFF%s\n', str);
+    if channel == 1
+        query = sprintf('WMF%s\n', str);
+    elseif channel == 2
+        query = sprintf('WFF%s\n', str);
+    else 
+        disp("Invalid signal generator channel selected!");
+        return;
+    end
     writeline(obj, query);
     flush(obj, "input");
     if read(obj, 1, "uint8") ~= 0x0A;

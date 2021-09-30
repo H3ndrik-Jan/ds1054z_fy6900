@@ -91,16 +91,16 @@ classdef DS1054Z < handle
         WPLAY_FCUR
     end
     
+    
     methods
         % DS1054Z Constructor
         function obj = DS1054Z( IP )
             
             obj.com = tcpip(IP, 5555);
             
-            
                          
             try
-                obj.com.InputBufferSize = 250000;
+                obj.com.InputBufferSize = 1160000;
                 fopen(obj.com);
             catch
                 obj.com = [];
@@ -1309,33 +1309,42 @@ classdef DS1054Z < handle
             
             txHeader = 11;
             bitHeader = 54;
-            pxBytes = 480*800*3;
-            resp = query(obj.com,':DISP:DATA?',  txHeader + bitHeader + pxBytes );
+            pxBytes = (480*800*3);
+            
+            %Temporarily increase the input buffer size for fetching the
+            %bmp
+            currentBufferSize = obj.com.InputBufferSize;
+            fclose(obj.com)
+            disp("Userdata:");
+
+            disp("wasuserdata");
+            IP = obj.com.RemoteHost
+            obj.com = tcpip(IP, 5555);          
+            try
+                obj.com.InputBufferSize = 1160000;
+                fopen(obj.com);
+            catch
+                obj.com = [];
+                error('Could Not Find Resource');
+            end
+            
+            fprintf(obj.com,'DISP:DATA? [ON, OFF, BMP24]');
+            imgdata = fread(obj.com, txHeader + bitHeader + pxBytes);
+            
+            %Input buffer size should be changed to the old value again
+            fclose(obj.com)
+            obj.com = tcpip(IP, 5555);             
+            try
+                obj.com.InputBufferSize = currentBufferSize;
+                fopen(obj.com);
+            catch
+                obj.com = [];
+                error('Could Not Find Resource');
+            end
             
             % Hard coded pixel indexing for DS1054Z
             % +1 for matlab indexing style
-            pxdat = resp((txHeader + bitHeader + 1):end);
-            
-            % Direct Indexing BMP Read ------------------------------------
-            % Elapsed time is 0.151698 seconds.
-            %             Bidx = 1:3:length(pxdat);
-            %             Gidx = 2:3:length(pxdat);
-            %             Ridx = 3:3:length(pxdat);
-            %             
-            %             Bidx = flipdim(reshape(Bidx,800,480)',1);
-            %             Gidx = flipdim(reshape(Gidx,800,480)',1);
-            %             Ridx = flipdim(reshape(Ridx,800,480)',1);
-            %             
-            %             B = pxdat(Bidx);
-            %             G = pxdat(Gidx);
-            %             R = pxdat(Ridx);
-            %             
-            %             img = [];
-            %             img(:,:,1) = R./255;
-            %             img(:,:,2) = G./255;
-            %             img(:,:,3) = B./255;
-            %  ------------------------------------------------------------
-            
+            pxdat = imgdata((txHeader + bitHeader+1):end);
  
         
             %  --- Simple BMP Read ----------------------------------------
@@ -1343,9 +1352,9 @@ classdef DS1054Z < handle
             B = pxdat(1:3:end);
             G = pxdat(2:3:end);
             R = pxdat(3:3:end);
-            
+
             % create matlab CData image
-            cimg = reshape([R' G' B']./255,800,480,3);
+            cimg = reshape([R' G' B']./255,[800,480,3]);
             
             img = imrotate(cimg,90);
             %  ------------------------------------------------------------
@@ -1369,7 +1378,7 @@ classdef DS1054Z < handle
                 % output of DS1054Z) or black on white
                 tColor = [ 1 1 1 ] .* ~logical(ColorInvert);
                 
-                text( 480, 467, [datestr(now) '; ' ustr(1,:) ], 'Interpreter', 'none', 'Color', tColor )
+                text( 470, 467, [datestr(now) '; ' ustr(1,:) ], 'Interpreter', 'none', 'Color', tColor, 'FontSize',12 )
                 img = [];
             end
                 
@@ -1405,6 +1414,10 @@ classdef DS1054Z < handle
             
                 error('Some Channels are not active');
             end
+            
+            mdepth = query(obj.com, ':ACQuire:MDEPth?');
+            disp('Memory depth');
+            disp(mdepth);
             
             buzzerSetting = query(obj.com, ':SYST:BEEP?');
             disp(buzzerSetting);
@@ -1461,7 +1474,7 @@ classdef DS1054Z < handle
             fprintf(obj.com, ':WAV:STAR %d', 1);
             fprintf(obj.com, ':WAV:STOP %d', 2);
 %             pause(0.1);
-
+            fprintf(obj.com,':WAV:MODE RAW');
             % Set the output memory interface 
             if ScreenMemory
                 fprintf(obj.com,':WAVeform:MODE NORM');
