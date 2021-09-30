@@ -100,7 +100,7 @@ classdef DS1054Z < handle
             
                          
             try
-                obj.com.InputBufferSize = 1160000;
+                obj.com.InputBufferSize = 550000;
                 fopen(obj.com);
             catch
                 obj.com = [];
@@ -1314,11 +1314,9 @@ classdef DS1054Z < handle
             %Temporarily increase the input buffer size for fetching the
             %bmp
             currentBufferSize = obj.com.InputBufferSize;
-            fclose(obj.com)
-            disp("Userdata:");
-
-            disp("wasuserdata");
             IP = obj.com.RemoteHost
+            
+            fclose(obj.com)
             obj.com = tcpip(IP, 5555);          
             try
                 obj.com.InputBufferSize = 1160000;
@@ -1378,7 +1376,7 @@ classdef DS1054Z < handle
                 % output of DS1054Z) or black on white
                 tColor = [ 1 1 1 ] .* ~logical(ColorInvert);
                 
-                text( 470, 467, [datestr(now) '; ' ustr(1,:) ], 'Interpreter', 'none', 'Color', tColor, 'FontSize',12 )
+                text( 460, 467, [datestr(now) '; ' ustr(1,:) ], 'Interpreter', 'none', 'Color', tColor, 'FontSize',12 )
                 img = [];
             end
                 

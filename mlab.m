@@ -13,7 +13,7 @@ setOutputState(FY6900, 2, true);
 h = DS1054Z('192.168.178.129');
 len = 120000;
 h.MDEPTH = 600000;
-h.MDEPTH = 600000;
+h.MDEPTH = 12000000;
 h.Stop
 h.T_SCALE = 1e-6;
 h.Run
