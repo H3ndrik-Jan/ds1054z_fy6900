@@ -5,3 +5,5 @@ The output of the DUT should be connected to channel 2 of the oscilloscope. The 
 The start frequency, frequency step and stop frequency can be specified. When the sweep is done, the results are plotted.
 This script/class can read the waveforms on the DS1054Z oscilloscope using visa over TCP/IP. The used class for accessing the scope is https://gitlab.com/kloppertje/laservelocitymeter, 
 which itself is based on https://github.com/sstobbe/mlab. A few changes to the class were necessary to get it working though. The FY6900 is controlled over USB.
+An example plot of a frequency sweep from 1-950Khz can be seen below:
+![alt text](http://github.com/H3ndrik-Jan/ds1054z_fy6900/blob/master/0-1meg.JPG)
